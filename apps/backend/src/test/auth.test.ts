@@ -160,8 +160,8 @@ describe('Authentication Tests', () => {
     expect(userApiKeys).toHaveLength(2);
   });
 
-  it('should verify webhook signature function exists', () => {
-    const { verifyWebhookSignature } = require('../lib/auth');
+  it('should verify webhook signature function exists', async () => {
+    const { verifyWebhookSignature } = await import('../lib/auth');
     
     // Basic test - function should exist and return boolean
     const result = verifyWebhookSignature('test payload', {});

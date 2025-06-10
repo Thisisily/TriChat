@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { trpc } from './trpc';
 
   let healthData: any = null;

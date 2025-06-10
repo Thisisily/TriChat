@@ -1,10 +1,5 @@
 import { z } from 'zod';
 import { router, publicProcedure } from '../trpc/init.js';
-import { 
-  MessageSchema, 
-  ThreadSchema, 
-  ChatCompletionRequestSchema 
-} from '@trichat/shared/types';
 
 export const chatRouter = router({
   // List available models
@@ -75,7 +70,23 @@ export const chatRouter = router({
       cursor: z.string().optional(),
     }))
     .query(async ({ input, ctx }) => {
-      const queryOptions: any = {
+      interface QueryOptions {
+        where: { threadId: string };
+        orderBy: { createdAt: 'desc' };
+        take: number;
+        include: {
+          user: {
+            select: {
+              id: true;
+              email: true;
+              username: true;
+            };
+          };
+        };
+        cursor?: { id: string };
+      }
+
+      const queryOptions: QueryOptions = {
         where: {
           threadId: input.threadId,
         },
@@ -183,7 +194,21 @@ export const chatRouter = router({
       // TODO: Get userId from authenticated context when Clerk is implemented
       const userId = input.userId || 'temp-user-id';
 
-      const queryOptions: any = {
+      interface ThreadQueryOptions {
+        where: { userId: string };
+        orderBy: { updatedAt: 'desc' };
+        take: number;
+        include: {
+          _count: {
+            select: {
+              messages: true;
+            };
+          };
+        };
+        cursor?: { id: string };
+      }
+
+      const queryOptions: ThreadQueryOptions = {
         where: {
           userId,
         },
