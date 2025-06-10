@@ -1,0 +1,50 @@
+{
+  "name": "trichat",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multi-LLM chat application built for raw speed and minimal latency",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"bun run dev:frontend\" \"bun run dev:backend\"",
+    "dev:frontend": "cd apps/frontend && bun run dev",
+    "dev:backend": "cd apps/backend && bun run dev",
+    "build": "bun run build:frontend && bun run build:backend",
+    "build:frontend": "cd apps/frontend && bun run build",
+    "build:backend": "cd apps/backend && bun run build",
+    "lint": "eslint . --ext .ts,.js,.svelte --fix",
+    "format": "prettier --write .",
+    "test": "bun test",
+    "test:frontend": "cd apps/frontend && bun test",
+    "test:backend": "cd apps/backend && bun test",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.15.0",
+    "@typescript-eslint/parser": "^8.15.0",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.16.0",
+    "eslint-plugin-svelte": "^2.46.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.4.2",
+    "prettier-plugin-svelte": "^3.3.2",
+    "typescript": "^5.7.2"
+  },
+  "keywords": [
+    "chat",
+    "llm",
+    "ai",
+    "svelte",
+    "bun",
+    "realtime"
+  ],
+  "author": "TriChat Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trichat/trichat.git"
+  }
+}

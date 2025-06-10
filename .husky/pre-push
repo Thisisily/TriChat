@@ -1,0 +1,12 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "🚀 Running pre-push checks..."
+
+echo "📝 Running linter..."
+bun run lint
+
+echo "🧪 Running tests..."
+bun run test
+
+echo "✅ Pre-push checks completed!" 
