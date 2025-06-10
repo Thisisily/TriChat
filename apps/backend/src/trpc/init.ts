@@ -3,6 +3,7 @@ import type { Context as HonoContext } from 'hono';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import superjson from 'superjson';
 import { ZodError } from 'zod';
+import { prisma } from '../lib/database.js';
 
 // Create context for tRPC - updated for Hono adapter
 export const createContext = async (opts: FetchCreateContextFnOptions, c: HonoContext) => {
@@ -14,6 +15,7 @@ export const createContext = async (opts: FetchCreateContextFnOptions, c: HonoCo
     res: c.res,
     user: null, // Will be populated after auth implementation
     authorization,
+    prisma, // Add Prisma client to context
   };
 };
 

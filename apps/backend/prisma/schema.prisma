@@ -1,0 +1,154 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication and user management
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // User's encrypted API keys for LLM providers
+  apiKeys UserApiKey[]
+
+  // User's chat threads
+  threads Thread[]
+  
+  // User's messages
+  messages Message[]
+
+  @@map("users")
+}
+
+// LLM Provider API keys (encrypted)
+model UserApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String   // openai, anthropic, google, etc.
+  keyName   String   // e.g., "My OpenAI Key"
+  encrypted String   // Encrypted API key
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, keyName])
+  @@map("user_api_keys")
+}
+
+// Chat thread model
+model Thread {
+  id             String   @id @default(cuid())
+  userId         String
+  title          String
+  isPublic       Boolean  @default(false)
+  parentThreadId String?  // For thread branching
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentThread Thread?    @relation("ThreadBranching", fields: [parentThreadId], references: [id])
+  branches     Thread[]   @relation("ThreadBranching")
+  messages     Message[]
+  shareLink    ShareLink?
+
+  // Indexes for performance
+  @@index([userId, createdAt(sort: Desc)]) // User's threads by date
+  @@index([isPublic, createdAt(sort: Desc)]) // Public threads
+  @@index([parentThreadId]) // Branch navigation
+  @@map("threads")
+}
+
+// Message role enum
+enum MessageRole {
+  user
+  assistant
+  system
+}
+
+// Message model with partitioning by userId for hot-path reads
+model Message {
+  id        String      @id @default(cuid())
+  threadId  String
+  userId    String      // For partitioning by user_id
+  content   String
+  role      MessageRole
+  model     String?     // LLM model used for assistant messages
+  provider  String?     // LLM provider used
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  // Relations
+  thread Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Memory cards related to this message
+  memoryCards MessageMemoryCard[]
+
+  // Performance indexes with BRIN for time-series data
+  @@index([threadId, createdAt(sort: Desc)]) // Messages in thread by time
+  @@index([userId, createdAt(sort: Desc)]) // User's messages by time
+  @@map("messages")
+}
+
+// Memory card model for vector embeddings (will be used with PgVector)
+model MemoryCard {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  content     String
+  summary     String?
+  embedding   String?  // Will store JSON array of floats for embeddings
+  metadata    String?  // JSON string for additional metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations to messages
+  messages MessageMemoryCard[]
+
+  // Indexes for vector similarity search
+  @@index([userId])
+  @@map("memory_cards")
+}
+
+// Junction table for message-memory card relationships
+model MessageMemoryCard {
+  messageId    String
+  memoryCardId String
+  relevance    Float?   @default(1.0) // Relevance score
+  createdAt    DateTime @default(now())
+
+  message    Message    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  memoryCard MemoryCard @relation(fields: [memoryCardId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, memoryCardId])
+  @@map("message_memory_cards")
+}
+
+// Share link model for public thread sharing
+model ShareLink {
+  id        String   @id @default(cuid())
+  threadId  String   @unique
+  token     String   @unique @default(cuid())
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+
+  thread Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@map("share_links")
+}

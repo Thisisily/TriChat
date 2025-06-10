@@ -36,18 +36,33 @@ export const chatRouter = router({
     .input(z.object({
       title: z.string().min(1).max(100),
       isPublic: z.boolean().default(false),
+      userId: z.string().optional(), // Temporary until auth is implemented
     }))
-    .mutation(async ({ input }) => {
-      // TODO: Implement database creation when Prisma is set up
-      const thread = {
-        id: crypto.randomUUID(),
-        userId: 'temp-user', // Will be replaced with actual user ID
-        title: input.title,
-        isPublic: input.isPublic,
-        parentThreadId: undefined,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+    .mutation(async ({ input, ctx }) => {
+      // TODO: Get userId from authenticated context when Clerk is implemented
+      const userId = input.userId || 'temp-user-id';
+
+      const thread = await ctx.prisma.thread.create({
+        data: {
+          userId,
+          title: input.title,
+          isPublic: input.isPublic,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+          _count: {
+            select: {
+              messages: true,
+            },
+          },
+        },
+      });
 
       return { thread };
     }),
@@ -55,39 +70,151 @@ export const chatRouter = router({
   // Get thread messages
   getMessages: publicProcedure
     .input(z.object({
-      threadId: z.string().uuid(),
+      threadId: z.string().cuid(),
       limit: z.number().min(1).max(100).default(50),
       cursor: z.string().optional(),
     }))
-    .query(async ({ input }) => {
-      // TODO: Implement database query when Prisma is set up
+    .query(async ({ input, ctx }) => {
+      const queryOptions: any = {
+        where: {
+          threadId: input.threadId,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: input.limit + 1, // Take one extra to check if there are more
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+        },
+      };
+
+      if (input.cursor) {
+        queryOptions.cursor = { id: input.cursor };
+      }
+
+      const messages = await ctx.prisma.message.findMany(queryOptions);
+
+      let nextCursor: string | undefined = undefined;
+      if (messages.length > input.limit) {
+        const nextItem = messages.pop(); // Remove the extra item
+        nextCursor = nextItem?.id;
+      }
+
       return {
-        messages: [], // Will be populated from database
-        nextCursor: null,
+        messages: messages.reverse(), // Reverse to get chronological order
+        nextCursor,
       };
     }),
 
   // Send a message (will be used for streaming later)
   sendMessage: publicProcedure
     .input(z.object({
-      threadId: z.string().uuid(),
+      threadId: z.string().cuid(),
       content: z.string().min(1),
       model: z.string(),
       provider: z.enum(['openai', 'anthropic', 'google', 'mistral', 'openrouter']),
+      userId: z.string().optional(), // Temporary until auth is implemented
     }))
-    .mutation(async ({ input }) => {
-      // TODO: Implement message processing and LLM calling
-      const message = {
-        id: crypto.randomUUID(),
-        threadId: input.threadId,
-        userId: 'temp-user',
-        content: input.content,
-        role: 'user' as const,
-        model: input.model,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+    .mutation(async ({ input, ctx }) => {
+      // TODO: Get userId from authenticated context when Clerk is implemented
+      const userId = input.userId || 'temp-user-id';
+
+      // Create the user message first
+      const userMessage = await ctx.prisma.message.create({
+        data: {
+          threadId: input.threadId,
+          userId,
+          content: input.content,
+          role: 'user',
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+        },
+      });
+
+      // TODO: Implement LLM API call here
+      // For now, create a simple assistant response
+      const assistantMessage = await ctx.prisma.message.create({
+        data: {
+          threadId: input.threadId,
+          userId,
+          content: `Echo: ${input.content}`, // Temporary response
+          role: 'assistant',
+          model: input.model,
+          provider: input.provider,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+        },
+      });
+
+      return { 
+        userMessage,
+        assistantMessage,
+      };
+    }),
+
+  // Get user's threads
+  getThreads: publicProcedure
+    .input(z.object({
+      userId: z.string().optional(), // Temporary until auth is implemented
+      limit: z.number().min(1).max(50).default(20),
+      cursor: z.string().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      // TODO: Get userId from authenticated context when Clerk is implemented
+      const userId = input.userId || 'temp-user-id';
+
+      const queryOptions: any = {
+        where: {
+          userId,
+        },
+        orderBy: {
+          updatedAt: 'desc',
+        },
+        take: input.limit + 1,
+        include: {
+          _count: {
+            select: {
+              messages: true,
+            },
+          },
+        },
       };
 
-      return { message };
+      if (input.cursor) {
+        queryOptions.cursor = { id: input.cursor };
+      }
+
+      const threads = await ctx.prisma.thread.findMany(queryOptions);
+
+      let nextCursor: string | undefined = undefined;
+      if (threads.length > input.limit) {
+        const nextItem = threads.pop();
+        nextCursor = nextItem?.id;
+      }
+
+      return {
+        threads,
+        nextCursor,
+      };
     }),
 }); 

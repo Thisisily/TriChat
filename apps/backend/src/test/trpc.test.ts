@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { appRouter } from '../trpc/router.js';
 import { createContext } from '../trpc/init.js';
+import { prisma } from '../lib/database.js';
 
 // Mock Hono context for testing
 const mockHonoContext = {
@@ -14,6 +15,33 @@ const mockHonoContext = {
 } as any;
 
 describe('tRPC Router Tests', () => {
+  let testUserId: string;
+
+  beforeAll(async () => {
+    // Clean up any existing test data
+    await prisma.message.deleteMany();
+    await prisma.thread.deleteMany();
+    await prisma.userApiKey.deleteMany();
+    await prisma.user.deleteMany();
+
+    // Create a test user for tRPC tests
+    const testUser = await prisma.user.create({
+      data: {
+        email: 'trpc-test@example.com',
+        username: 'trpctest',
+      },
+    });
+    testUserId = testUser.id;
+  });
+
+  afterAll(async () => {
+    // Clean up test data
+    await prisma.message.deleteMany();
+    await prisma.thread.deleteMany();
+    await prisma.userApiKey.deleteMany();
+    await prisma.user.deleteMany();
+  });
+
   test('health.check should return status ok', async () => {
     const ctx = await createContext({} as any, mockHonoContext);
     const caller = appRouter.createCaller(ctx);
@@ -71,11 +99,38 @@ describe('tRPC Router Tests', () => {
     const result = await caller.chat.createThread({
       title: 'Test Thread',
       isPublic: false,
+      userId: testUserId, // Use the actual test user ID
     });
     
     expect(result.thread.title).toBe('Test Thread');
     expect(result.thread.isPublic).toBe(false);
     expect(result.thread.id).toBeTypeOf('string');
-    expect(result.thread.userId).toBeTypeOf('string');
+    expect(result.thread.userId).toBe(testUserId);
+  });
+
+  test('chat.sendMessage should create messages', async () => {
+    const ctx = await createContext({} as any, mockHonoContext);
+    const caller = appRouter.createCaller(ctx);
+    
+    // First create a thread
+    const threadResult = await caller.chat.createThread({
+      title: 'Message Test Thread',
+      isPublic: false,
+      userId: testUserId,
+    });
+    
+    // Then send a message
+    const messageResult = await caller.chat.sendMessage({
+      threadId: threadResult.thread.id,
+      content: 'Hello, test!',
+      model: 'gpt-4o',
+      provider: 'openai',
+      userId: testUserId,
+    });
+    
+    expect(messageResult.userMessage.content).toBe('Hello, test!');
+    expect(messageResult.userMessage.role).toBe('user');
+    expect(messageResult.assistantMessage.content).toBe('Echo: Hello, test!');
+    expect(messageResult.assistantMessage.role).toBe('assistant');
   });
 }); 
