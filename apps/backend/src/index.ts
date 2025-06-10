@@ -2,6 +2,9 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { compress } from 'hono/compress';
+import { trpcServer } from '@hono/trpc-server';
+import { appRouter } from './trpc/router.js';
+import { createContext } from './trpc/init.js';
 
 const app = new Hono();
 
@@ -16,7 +19,7 @@ app.use(
   })
 );
 
-// Health check
+// Health check (legacy endpoint)
 app.get('/health', (c: Context) => {
   return c.json({
     status: 'ok',
@@ -25,15 +28,31 @@ app.get('/health', (c: Context) => {
   });
 });
 
-// API routes
+// tRPC endpoint
+app.use(
+  '/trpc/*',
+  trpcServer({
+    router: appRouter,
+    createContext,
+  })
+);
+
+// API routes (legacy)
 app.get('/api/hello', (c: Context) => {
   return c.json({ message: 'Hello from TriChat API!' });
+});
+
+// WebSocket support for future streaming (placeholder)
+app.get('/ws', (c: Context) => {
+  return c.text('WebSocket endpoint ready for streaming implementation');
 });
 
 // Start server
 const port = process.env['PORT'] || 3001;
 
 console.log(`🚀 TriChat API server starting on port ${port}`);
+console.log(`📡 tRPC endpoint available at http://localhost:${port}/trpc`);
+console.log(`🔗 Health check at http://localhost:${port}/health`);
 
 export default {
   port,

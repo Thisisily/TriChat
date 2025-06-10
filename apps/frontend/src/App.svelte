@@ -2,30 +2,37 @@
   import svelteLogo from './assets/svelte.svg';
   import viteLogo from '/vite.svg';
   import Counter from './lib/Counter.svelte';
+  import ApiTest from './lib/ApiTest.svelte';
 </script>
 
 <main>
   <div>
-    <a href="https://vite.dev" target="_blank" rel="noreferrer">
+    <a href="https://vitejs.dev" target="_blank" rel="noreferrer">
       <img src={viteLogo} class="logo" alt="Vite Logo" />
     </a>
     <a href="https://svelte.dev" target="_blank" rel="noreferrer">
       <img src={svelteLogo} class="logo svelte" alt="Svelte Logo" />
     </a>
   </div>
-  <h1>Vite + Svelte</h1>
+  
+  <h1>🗨️ TriChat</h1>
+  <h2>Multi-LLM Chat Application</h2>
+  
+  <p class="subtitle">
+    Built with <strong>Bun + Hono + tRPC</strong> backend and <strong>Vite + Svelte</strong> frontend
+  </p>
 
   <div class="card">
     <Counter />
   </div>
 
-  <p>
-    Check out <a href="https://github.com/sveltejs/kit#readme" target="_blank" rel="noreferrer"
-      >SvelteKit</a
-    >, the official Svelte app framework powered by Vite!
-  </p>
+  <div class="card">
+    <ApiTest />
+  </div>
 
-  <p class="read-the-docs">Click on the Vite and Svelte logos to learn more</p>
+  <p class="read-the-docs">
+    Check the console for tRPC API responses demonstrating end-to-end type safety!
+  </p>
 </main>
 
 <style>
@@ -43,5 +50,30 @@
   }
   .read-the-docs {
     color: #888;
+  }
+
+  h1 {
+    font-size: 3em;
+    margin-bottom: 0.2em;
+  }
+
+  h2 {
+    font-size: 1.5em;
+    color: #4f46e5;
+    margin-bottom: 1em;
+  }
+
+  .subtitle {
+    font-size: 1.1em;
+    color: #666;
+    margin-bottom: 2em;
+  }
+
+  .card {
+    margin: 2em 0;
+    padding: 2em;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f9fafb;
   }
 </style>
