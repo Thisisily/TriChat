@@ -4,16 +4,20 @@ import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import superjson from 'superjson';
 import { ZodError } from 'zod';
 import { prisma } from '../lib/database.js';
+import { getUserFromAuth } from '../lib/auth.js';
 
-// Create context for tRPC - updated for Hono adapter
-export const createContext = async (opts: FetchCreateContextFnOptions, c: HonoContext) => {
+// Create context for tRPC - updated for Hono adapter with authentication
+export const createContext = async (_opts: FetchCreateContextFnOptions, c: HonoContext) => {
   // Extract user info from headers or session
   const authorization = c.req.header('authorization');
+  
+  // Get authenticated user if authorization header is present
+  const authUser = authorization ? await getUserFromAuth(authorization) : null;
   
   return {
     req: c.req,
     res: c.res,
-    user: null, // Will be populated after auth implementation
+    user: authUser, // Now contains actual user data when authenticated
     authorization,
     prisma, // Add Prisma client to context
   };
@@ -42,17 +46,17 @@ const t = initTRPC.context<Context>().create({
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
-// Middleware for authenticated procedures (to be implemented later)
+// Middleware for authenticated procedures - now properly implemented
 export const authenticatedProcedure = t.procedure.use(async ({ ctx, next }) => {
-  // TODO: Implement authentication check
-  if (!ctx.authorization) {
-    throw new Error('Unauthorized');
+  // Check if user is authenticated
+  if (!ctx.user) {
+    throw new Error('Unauthorized - Please sign in to continue');
   }
   
   return next({
     ctx: {
       ...ctx,
-      // user: authenticatedUser, // Will be implemented with Clerk
+      user: ctx.user, // User is guaranteed to be present here
     },
   });
 });

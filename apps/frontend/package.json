@@ -18,6 +18,7 @@
     "vite": "^6.3.5"
   },
   "dependencies": {
+    "@clerk/clerk-js": "^5.68.0",
     "@trpc/client": "^11.3.1",
     "@trpc/server": "^11.3.1",
     "superjson": "^2.2.2"

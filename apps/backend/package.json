@@ -18,6 +18,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.699.0",
     "@aws-sdk/s3-request-presigner": "^3.699.0",
+    "@clerk/backend": "^2.0.0",
     "@hono/trpc-server": "^0.3.4",
     "@prisma/client": "^6.9.0",
     "@trpc/client": "^11.0.0",

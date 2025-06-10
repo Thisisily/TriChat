@@ -1,22 +1,28 @@
-import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import { createTRPCClient, httpBatchLink } from '@trpc/client';
+import type { AppRouter } from '../../../backend/src/app';
+import { getSessionToken } from './stores/auth';
 import superjson from 'superjson';
-import type { AppRouter } from '@trichat/backend/src/trpc/router';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // Create the tRPC client with end-to-end type safety
-export const trpc = createTRPCProxyClient<AppRouter>({
+export const trpc = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
-      url: 'http://localhost:3001/trpc',
+      url: `${API_BASE_URL}/trpc`,
       transformer: superjson,
-      // Add auth headers when available
-      headers() {
+      async headers() {
+        // Get session token for authenticated requests
+        const token = await getSessionToken();
+        
         return {
-          // authorization: `Bearer ${getAuthToken()}`, // Will implement with Clerk
+          ...(token && { authorization: `Bearer ${token}` }),
+          'content-type': 'application/json',
         };
       },
     }),
   ],
 });
 
-// Type exports for use throughout the frontend
-export type { AppRouter } from '@trichat/backend/src/trpc/router'; 
+// Export types for use in components
+export type { AppRouter } from '../../../backend/src/app'; 
