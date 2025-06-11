@@ -16,14 +16,6 @@ export default [
       },
       globals: {
         console: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        global: 'readonly',
-        module: 'readonly',
-        require: 'readonly',
-        exports: 'readonly',
       },
     },
     plugins: {
@@ -37,10 +29,63 @@ export default [
       '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
+  // Backend (Node.js/Bun) configuration
+  {
+    files: ['apps/backend/**/*.{js,ts}', 'packages/**/*.{js,ts}'],
+    languageOptions: {
+      globals: {
+        // Node.js/Bun globals
+        console: 'readonly',
+        process: 'readonly',
+        Buffer: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        global: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+        exports: 'readonly',
+        
+        // Bun specific
+        Bun: 'readonly',
+        
+        // Web Standards available in Bun
+        fetch: 'readonly',
+        Request: 'readonly',
+        Response: 'readonly',
+        Headers: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        WebSocket: 'readonly',
+        ReadableStream: 'readonly',
+        WritableStream: 'readonly',
+        TransformStream: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+        FormData: 'readonly',
+        Blob: 'readonly',
+        File: 'readonly',
+        
+        // Timers
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        
+        // Crypto
+        crypto: 'readonly',
+        
+        // AbortController
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+      },
+    },
+  },
+  // Frontend (Browser) configuration
   {
     files: ['apps/frontend/**/*.{js,ts}', '**/*.svelte'],
     languageOptions: {
       globals: {
+        // Browser APIs
         window: 'readonly',
         document: 'readonly',
         navigator: 'readonly',
@@ -48,9 +93,51 @@ export default [
         sessionStorage: 'readonly',
         fetch: 'readonly',
         console: 'readonly',
+        
+        // Web APIs
+        WebSocket: 'readonly',
+        EventSource: 'readonly',
+        Request: 'readonly',
+        Response: 'readonly',
+        Headers: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        
+        // DOM APIs
+        HTMLElement: 'readonly',
+        Element: 'readonly',
+        Node: 'readonly',
+        ShadowRoot: 'readonly',
+        MutationObserver: 'readonly',
+        ResizeObserver: 'readonly',
+        
+        // Timers and async
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+        queueMicrotask: 'readonly',
+        requestIdleCallback: 'readonly',
+        cancelIdleCallback: 'readonly',
+        
+        // Workers and encoding
+        Worker: 'readonly',
+        Blob: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+        btoa: 'readonly',
+        atob: 'readonly',
+        
+        // Web platform
+        CSS: 'readonly',
+        AbortController: 'readonly',
+        DOMException: 'readonly',
       },
     },
   },
+  // Svelte specific configuration
   {
     files: ['**/*.svelte'],
     languageOptions: {
@@ -70,6 +157,52 @@ export default [
     },
   },
   {
-    ignores: ['node_modules/', 'dist/', 'build/', '.svelte-kit/', 'coverage/', '**/*.d.ts'],
+    ignores: [
+      // Dependencies
+      'node_modules/',
+      '**/node_modules/',
+      
+      // Build outputs
+      'dist/',
+      '**/dist/',
+      'build/',
+      '**/build/',
+      '.svelte-kit/',
+      '**/.svelte-kit/',
+      
+      // Generated files
+      'coverage/',
+      '**/coverage/',
+      '**/*.d.ts',
+      'generated/',
+      '**/generated/',
+      
+      // Prisma generated
+      'apps/backend/prisma/migrations/',
+      'apps/backend/generated/',
+      
+      // Package manager
+      '.pnpm/',
+      '.yarn/',
+      'yarn.lock',
+      'package-lock.json',
+      'bun.lockb',
+      
+      // IDE/OS files
+      '.DS_Store',
+      '*.log',
+      '.env',
+      '.env.*',
+      
+      // Temporary files
+      '*.tmp',
+      '*.temp',
+      
+      // Large bundled files (often unreadable anyway)
+      '**/*bundle*.js',
+      '**/*chunk*.js',
+      '**/*vendor*.js',
+    ],
   },
 ];
+ 

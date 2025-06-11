@@ -1,40 +1,71 @@
 import { Hono } from 'hono';
-import { trpcServer } from '@hono/trpc-server';
-import { createContext, router } from './trpc/init.js';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { router, createContext } from './trpc/init.js';
 import { healthRouter } from './routes/health.js';
 import { chatRouter } from './routes/chat.js';
 import { authRouter } from './routes/auth.js';
+import { streamingRouter } from './routes/streaming.js';
 
 const app = new Hono();
 
-// Combine all routers into a nested structure
+// Middleware
+app.use('*', logger());
+app.use('*', cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+}));
+
+// Streaming routes (WebSocket & SSE)
+app.route('/stream', streamingRouter);
+
+// tRPC routes
 const appRouter = router({
   health: healthRouter,
   chat: chatRouter,
   auth: authRouter,
 });
 
-// Add tRPC middleware with proper context binding
-app.use(
-  '/trpc/*',
-  trpcServer({
+// tRPC handler
+app.use('/trpc/*', async (c) => {
+  const trpcHandler = await import('@trpc/server/adapters/fetch');
+  return trpcHandler.fetchRequestHandler({
+    endpoint: '/trpc',
+    req: c.req.raw,
     router: appRouter,
-    createContext,
-  })
-);
+    createContext: async ({ req }) => {
+      // Create a Hono context-like object
+      const honoReq = { 
+        header: (name: string) => req.headers.get(name),
+        query: (name: string) => new URL(req.url).searchParams.get(name),
+        raw: req,
+      };
+      const honoCtx = { 
+        req: honoReq,
+        res: new Response()
+      };
+      return createContext(req as any, honoCtx as any);
+    },
+  });
+});
 
-// Health check endpoint (non-tRPC)
-app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
-
-// Root endpoint
-app.get('/', (c) => c.json({ 
-  message: 'TriChat Backend API',
-  version: '1.0.0',
-  endpoints: {
-    health: '/health',
-    trpc: '/trpc',
-  }
-}));
+// Root health check
+app.get('/', (c) => {
+  return c.json({
+    message: 'TriChat Backend API',
+    version: '1.0.0',
+    status: 'healthy',
+    endpoints: {
+      trpc: '/trpc',
+      streaming: '/stream',
+      websocket: '/stream/ws',
+      sse: '/stream/sse',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
 
 export default app;
 export type AppRouter = typeof appRouter; 

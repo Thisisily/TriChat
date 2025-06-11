@@ -60,6 +60,20 @@ export {
   type AppPreferences,
 } from './preferences';
 
+// Streaming stores and functionality
+export {
+  connectionStatus,
+  streamMessages,
+  presenceUsers,
+  streamingService,
+  streamingActions,
+  type StreamMessage,
+  type StreamMessageType,
+  type ConnectionState,
+  type ConnectionStatus,
+  type StreamingConfig,
+} from '../streaming';
+
 // Import actions for the combined object
 import { 
   initializeClerk as initClerk,

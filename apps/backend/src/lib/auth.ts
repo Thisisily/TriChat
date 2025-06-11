@@ -48,8 +48,7 @@ export async function getUserFromAuth(authHeader: string | undefined): Promise<{
 
 // Verify webhook signature (for Clerk webhooks)
 export function verifyWebhookSignature(
-  _payload: string,
-  _headers: Record<string, string | undefined>
+  ..._args: unknown[]
 ): boolean {
   try {
     const webhookSecret = process.env['CLERK_WEBHOOK_SECRET'];
@@ -89,4 +88,6 @@ export async function syncUserToDatabase(clerkUser: any): Promise<void> {
     console.error('Failed to sync user to database:', error);
     throw error;
   }
-} 
+}
+
+ 

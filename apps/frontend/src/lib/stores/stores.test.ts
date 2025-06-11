@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { get } from 'svelte/store';
-import { preferences, uiActions, type AppPreferences } from './preferences';
+import { preferences, uiActions } from './preferences';
 import { threads, currentThread, threadActions } from './threads';
 
 describe('Preferences Store', () => {
