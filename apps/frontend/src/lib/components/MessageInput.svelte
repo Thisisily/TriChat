@@ -21,7 +21,7 @@
   let textarea: HTMLTextAreaElement;
   let message = '';
   let isComposing = false;
-  let showEmojiPicker = false;
+  // let showEmojiPicker = false;
   let files: FileList | null = null;
   let fileInput: HTMLInputElement;
   let typingTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -332,9 +332,9 @@
                $currentThread;
 
   // Focus management
-  function focusInput() {
-    textarea?.focus();
-  }
+  // function focusInput() {
+  //   textarea?.focus();
+  // }
 
   onMount(() => {
     autoResize();
@@ -604,19 +604,7 @@
     background: #ef4444;
   }
 
-  .send-button {
-    width: 36px;
-    height: 36px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-  }
 
-  .send-button:disabled {
-    cursor: not-allowed;
-  }
 
   .send-icon {
     font-size: 16px;
@@ -724,10 +712,7 @@
       padding: 6px 10px;
     }
 
-    .send-button {
-      width: 32px;
-      height: 32px;
-    }
+
 
     .action-button {
       width: 28px;

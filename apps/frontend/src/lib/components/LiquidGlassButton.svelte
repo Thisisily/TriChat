@@ -1,6 +1,5 @@
 <script lang="ts">
   import { spring } from 'svelte/motion';
-  import { onMount } from 'svelte';
   
   export let variant: 'primary' | 'secondary' | 'ghost' = 'primary';
   export let size: 'small' | 'medium' | 'large' = 'medium';
@@ -90,7 +89,7 @@
 >
   <div class="button-backdrop"></div>
   <div class="button-content">
-    <slot />
+    <slot></slot>
   </div>
   <div class="button-shine"></div>
   

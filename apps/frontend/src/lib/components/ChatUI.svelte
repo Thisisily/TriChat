@@ -3,9 +3,6 @@
   import { 
     currentThread,
     isAuthenticated,
-    currentUser,
-    preferences,
-    currentMessages,
     threads,
     threadActions,
   } from '../stores';
@@ -77,7 +74,7 @@
     }
     
     try {
-      const thread = await threadActions.createThread('New Chat', false);
+      await threadActions.createThread('New Chat', false);
       closeMobileMenu();
     } catch (error) {
       console.error('Failed to create thread:', error);
@@ -118,6 +115,7 @@
 <div class="chat-ui" class:sidebar-collapsed={effectiveSidebarCollapsed}>
   <!-- Mobile Backdrop -->
   {#if isMobile && showMobileMenu}
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <div 
       class="mobile-backdrop liquid-glass-backdrop" 
       on:click={closeMobileMenu}
@@ -391,23 +389,7 @@
     color: rgba(0, 0, 0, 0.8);
   }
   
-  .new-thread-button {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 500;
-    cursor: pointer;
-    font-size: 14px;
-  }
-  
-  .sign-in-button {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 500;
-    cursor: pointer;
-    font-size: 14px;
-  }
+
   
 
   
@@ -478,10 +460,7 @@
     padding: 24px;
   }
   
-  .welcome-content-wrapper {
-    max-width: 700px;
-    width: 90%;
-  }
+
   
   .welcome-content {
     text-align: center;
@@ -612,10 +591,6 @@
   
   /* Responsive design */
   @media (max-width: 768px) {
-    .welcome-content-wrapper {
-      max-width: 90%;
-    }
-    
     .welcome-title {
       font-size: 24px;
     }
