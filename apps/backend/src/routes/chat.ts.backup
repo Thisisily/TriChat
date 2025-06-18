@@ -1,0 +1,674 @@
+import { z } from 'zod';
+import { router, publicProcedure, authenticatedProcedure } from '../trpc/init.js';
+import { observable } from '@trpc/server/observable';
+import { 
+  generateLLMStreamResponse, 
+  getUserApiKey, 
+  validateModelForProvider,
+  type LLMMessage,
+  type LLMProvider 
+} from '../lib/llm.js';
+import { streamingUtils } from '../lib/streaming.js';
+
+// Input validation schemas
+const ThreadIdSchema = z.string().cuid();
+const MessageContentSchema = z.string().min(1).max(50000);
+const ModelProviderSchema = z.enum(['openai', 'anthropic', 'google', 'mistral', 'openrouter']);
+
+export const chatRouter = router({
+  // List available models
+  models: publicProcedure
+    .query(() => {
+      return {
+        providers: [
+          {
+            id: 'openai',
+            name: 'OpenAI',
+            models: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+          },
+          {
+            id: 'anthropic', 
+            name: 'Anthropic',
+            models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+          },
+          {
+            id: 'google',
+            name: 'Google',
+            models: ['gemini-1.5-pro', 'gemini-1.5-flash'],
+          },
+        ],
+      };
+    }),
+
+  // Create a new thread
+  createThread: authenticatedProcedure
+    .input(z.object({
+      title: z.string().min(1).max(100),
+      isPublic: z.boolean().default(false),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { user, prisma } = ctx;
+
+      const thread = await prisma.thread.create({
+        data: {
+          userId: user.userId,
+          title: input.title,
+          isPublic: input.isPublic,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+          _count: {
+            select: {
+              messages: true,
+            },
+          },
+        },
+      });
+
+      return { thread };
+    }),
+
+  // Update thread
+  updateThread: authenticatedProcedure
+    .input(z.object({
+      threadId: ThreadIdSchema,
+      title: z.string().min(1).max(100).optional(),
+      isPublic: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { user, prisma } = ctx;
+
+      // Verify thread ownership
+      const existingThread = await prisma.thread.findFirst({
+        where: {
+          id: input.threadId,
+          userId: user.userId,
+        },
+      });
+
+      if (!existingThread) {
+        throw new Error('Thread not found or access denied');
+      }
+
+      const updateData: { title?: string; isPublic?: boolean; updatedAt: Date } = {
+        updatedAt: new Date(),
+      };
+
+      if (input.title !== undefined) updateData.title = input.title;
+      if (input.isPublic !== undefined) updateData.isPublic = input.isPublic;
+
+      const thread = await prisma.thread.update({
+        where: { id: input.threadId },
+        data: updateData,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+          _count: {
+            select: {
+              messages: true,
+            },
+          },
+        },
+      });
+
+      return { thread };
+    }),
+
+  // Delete thread
+  deleteThread: authenticatedProcedure
+    .input(z.object({
+      threadId: ThreadIdSchema,
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { user, prisma } = ctx;
+
+      // Verify thread ownership
+      const existingThread = await prisma.thread.findFirst({
+        where: {
+          id: input.threadId,
+          userId: user.userId,
+        },
+      });
+
+      if (!existingThread) {
+        throw new Error('Thread not found or access denied');
+      }
+
+      await prisma.thread.delete({
+        where: { id: input.threadId },
+      });
+
+      return { success: true, threadId: input.threadId };
+    }),
+
+  // Get thread messages with pagination
+  getMessages: authenticatedProcedure
+    .input(z.object({
+      threadId: ThreadIdSchema,
+      limit: z.number().min(1).max(100).default(50),
+      cursor: z.string().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const { user, prisma } = ctx;
+
+      // Verify thread access
+      const thread = await prisma.thread.findFirst({
+        where: {
+          id: input.threadId,
+          OR: [
+            { userId: user.userId },
+            { isPublic: true },
+          ],
+        },
+      });
+
+      if (!thread) {
+        throw new Error('Thread not found or access denied');
+      }
+
+      interface QueryOptions {
+        where: { threadId: string };
+        orderBy: { createdAt: 'desc' };
+        take: number;
+        include: {
+          user: {
+            select: {
+              id: true;
+              email: true;
+              username: true;
+            };
+          };
+        };
+        cursor?: { id: string };
+      }
+
+      const queryOptions: QueryOptions = {
+        where: {
+          threadId: input.threadId,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: input.limit + 1, // Take one extra to check if there are more
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+        },
+      };
+
+      if (input.cursor) {
+        queryOptions.cursor = { id: input.cursor };
+      }
+
+      const messages = await prisma.message.findMany(queryOptions);
+
+      let nextCursor: string | undefined = undefined;
+      if (messages.length > input.limit) {
+        const nextItem = messages.pop(); // Remove the extra item
+        nextCursor = nextItem?.id;
+      }
+
+      return {
+        messages: messages.reverse(), // Reverse to get chronological order
+        nextCursor,
+      };
+    }),
+
+  // Send a message with LLM integration
+  sendMessage: authenticatedProcedure
+    .input(z.object({
+      threadId: ThreadIdSchema,
+      content: MessageContentSchema,
+      model: z.string(),
+      provider: ModelProviderSchema,
+      temperature: z.number().min(0).max(2).default(0.7),
+      maxTokens: z.number().min(1).max(4096).default(2048),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { user, prisma } = ctx;
+
+      // Verify thread access
+      const thread = await prisma.thread.findFirst({
+        where: {
+          id: input.threadId,
+          userId: user.userId,
+        },
+      });
+
+      if (!thread) {
+        throw new Error('Thread not found or access denied');
+      }
+
+      // Validate model for provider
+      if (!validateModelForProvider(input.provider as LLMProvider, input.model)) {
+        throw new Error(`Invalid model ${input.model} for provider ${input.provider}`);
+      }
+
+      // Get user's API key for the provider
+      const apiKey = await getUserApiKey(user.userId, input.provider as LLMProvider, prisma);
+      if (!apiKey) {
+        throw new Error(`No API key found for provider ${input.provider}. Please add your API key in settings.`);
+      }
+
+      // Create the user message first
+      const userMessage = await prisma.message.create({
+        data: {
+          threadId: input.threadId,
+          userId: user.userId,
+          content: input.content,
+          role: 'user',
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+        },
+      });
+
+      // Create placeholder assistant message
+      const assistantMessage = await prisma.message.create({
+        data: {
+          threadId: input.threadId,
+          userId: user.userId,
+          content: '', // Will be updated via streaming
+          role: 'assistant',
+          model: input.model,
+          provider: input.provider,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+        },
+      });
+
+      // Start streaming response in the background
+      setImmediate(async () => {
+        try {
+          // Get conversation history
+          const previousMessages = await prisma.message.findMany({
+            where: { threadId: input.threadId },
+            orderBy: { createdAt: 'asc' },
+            take: 20, // Limit context window
+          });
+
+          // Convert to LLM format
+          const llmMessages: LLMMessage[] = previousMessages
+            .filter(msg => msg.content.trim()) // Filter out empty messages
+            .map(msg => ({
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: msg.content,
+            }));
+
+          // Generate streaming response
+          const streamGenerator = generateLLMStreamResponse(llmMessages, {
+            model: input.model,
+            provider: input.provider as LLMProvider,
+            apiKey,
+            temperature: input.temperature,
+            maxTokens: input.maxTokens,
+            stream: true,
+          });
+
+          let accumulatedContent = '';
+          
+          for await (const chunk of streamGenerator) {
+            accumulatedContent = chunk.content;
+
+            // Send real-time update via WebSocket/SSE
+            streamingUtils.sendToUser(user.userId, {
+              type: 'chat_response',
+              id: `stream_${assistantMessage.id}_${Date.now()}`,
+              threadId: input.threadId,
+              userId: user.userId,
+              data: {
+                messageId: assistantMessage.id,
+                content: chunk.content,
+                delta: chunk.delta,
+                role: 'assistant',
+                model: input.model,
+                provider: input.provider,
+                isComplete: chunk.isComplete,
+                usage: chunk.usage,
+              },
+              timestamp: Date.now(),
+            });
+          }
+
+          // Update the assistant message with final content
+          await prisma.message.update({
+            where: { id: assistantMessage.id },
+            data: { 
+              content: accumulatedContent,
+              updatedAt: new Date(),
+            },
+          });
+
+          // Send completion message
+          streamingUtils.sendToUser(user.userId, {
+            type: 'chat_complete',
+            id: `complete_${assistantMessage.id}`,
+            threadId: input.threadId,
+            userId: user.userId,
+            data: {
+              messageId: assistantMessage.id,
+              content: accumulatedContent,
+              role: 'assistant',
+              model: input.model,
+              provider: input.provider,
+              isComplete: true,
+            },
+            timestamp: Date.now(),
+          });
+
+        } catch (error) {
+          console.error('LLM streaming error:', error);
+          
+          // Update message with error
+          await prisma.message.update({
+            where: { id: assistantMessage.id },
+            data: { 
+              content: `Error: ${error instanceof Error ? error.message : 'Failed to generate response'}`,
+              updatedAt: new Date(),
+            },
+          });
+
+          // Send error message via streaming
+          streamingUtils.sendToUser(user.userId, {
+            type: 'error',
+            id: `error_${assistantMessage.id}`,
+            threadId: input.threadId,
+            userId: user.userId,
+            data: {
+              messageId: assistantMessage.id,
+              error: error instanceof Error ? error.message : 'Failed to generate response',
+            },
+            timestamp: Date.now(),
+          });
+        }
+      });
+
+      return { 
+        userMessage,
+        assistantMessage,
+      };
+    }),
+
+  // Get user's threads with search and filtering
+  getThreads: authenticatedProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(50).default(20),
+      cursor: z.string().optional(),
+      search: z.string().optional(),
+      isPublic: z.boolean().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const { user, prisma } = ctx;
+
+      interface ThreadQueryOptions {
+        where: {
+          userId: string;
+          isPublic?: boolean;
+          title?: {
+            contains: string;
+            mode: 'insensitive';
+          };
+        };
+        orderBy: { updatedAt: 'desc' };
+        take: number;
+        include: {
+          _count: {
+            select: {
+              messages: true;
+            };
+          };
+        };
+        cursor?: { id: string };
+      }
+
+      const whereClause: ThreadQueryOptions['where'] = {
+        userId: user.userId,
+      };
+
+      if (input.isPublic !== undefined) {
+        whereClause.isPublic = input.isPublic;
+      }
+
+      if (input.search) {
+        whereClause.title = {
+          contains: input.search,
+          mode: 'insensitive',
+        };
+      }
+
+      const queryOptions: ThreadQueryOptions = {
+        where: whereClause,
+        orderBy: {
+          updatedAt: 'desc',
+        },
+        take: input.limit + 1,
+        include: {
+          _count: {
+            select: {
+              messages: true,
+            },
+          },
+        },
+      };
+
+      if (input.cursor) {
+        queryOptions.cursor = { id: input.cursor };
+      }
+
+      const threads = await prisma.thread.findMany(queryOptions);
+
+      let nextCursor: string | undefined = undefined;
+      if (threads.length > input.limit) {
+        const nextItem = threads.pop();
+        nextCursor = nextItem?.id;
+      }
+
+      return {
+        threads,
+        nextCursor,
+      };
+    }),
+
+  // Search messages across threads
+  searchMessages: authenticatedProcedure
+    .input(z.object({
+      query: z.string().min(1),
+      threadId: ThreadIdSchema.optional(),
+      role: z.enum(['user', 'assistant', 'system']).optional(),
+      model: z.string().optional(),
+      provider: ModelProviderSchema.optional(),
+      limit: z.number().min(1).max(100).default(20),
+      cursor: z.string().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const { user, prisma } = ctx;
+
+      interface MessageQueryOptions {
+        where: {
+          userId: string;
+          threadId?: string;
+          role?: string;
+          model?: string;
+          provider?: string;
+          content: {
+            contains: string;
+            mode: 'insensitive';
+          };
+        };
+        orderBy: { createdAt: 'desc' };
+        take: number;
+        include: {
+          user: {
+            select: {
+              id: true;
+              email: true;
+              username: true;
+            };
+          };
+          thread: {
+            select: {
+              id: true;
+              title: true;
+            };
+          };
+        };
+        cursor?: { id: string };
+      }
+
+      const whereClause: MessageQueryOptions['where'] = {
+        userId: user.userId,
+        content: {
+          contains: input.query,
+          mode: 'insensitive',
+        },
+      };
+
+      if (input.threadId) whereClause.threadId = input.threadId;
+      if (input.role) whereClause.role = input.role;
+      if (input.model) whereClause.model = input.model;
+      if (input.provider) whereClause.provider = input.provider;
+
+      const queryOptions: MessageQueryOptions = {
+        where: whereClause,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: input.limit + 1,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+          thread: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+        },
+      };
+
+      if (input.cursor) {
+        queryOptions.cursor = { id: input.cursor };
+      }
+
+      const messages = await prisma.message.findMany(queryOptions);
+
+      let nextCursor: string | undefined = undefined;
+      if (messages.length > input.limit) {
+        const nextItem = messages.pop();
+        nextCursor = nextItem?.id;
+      }
+
+      return {
+        messages,
+        nextCursor,
+      };
+    }),
+
+  // Real-time stream subscription for thread updates
+  streamResponse: authenticatedProcedure
+    .input(z.object({
+      threadId: ThreadIdSchema,
+    }))
+    .subscription(({ input, ctx }) => {
+      const { user } = ctx;
+      
+      return observable<{
+        messageId: string;
+        content: string;
+        delta: string;
+        isComplete: boolean;
+        usage?: {
+          promptTokens: number;
+          completionTokens: number;
+          totalTokens: number;
+        };
+      }>((emit) => {
+        console.log(`Starting stream subscription for user ${user.userId}, thread ${input.threadId}`);
+
+        // This would be replaced with actual streaming logic
+        // For now, this is a placeholder that demonstrates the subscription pattern
+        const interval = setInterval(() => {
+          emit.next({
+            messageId: 'demo-message-id',
+            content: 'Demo streaming content',
+            delta: 'Demo',
+            isComplete: false,
+          });
+        }, 1000);
+
+        // Cleanup function
+        return () => {
+          console.log(`Cleaning up stream subscription for user ${user.userId}, thread ${input.threadId}`);
+          clearInterval(interval);
+        };
+      });
+    }),
+
+  // Thread updates subscription
+  threadUpdates: authenticatedProcedure
+    .input(z.object({
+      threadIds: z.array(ThreadIdSchema).optional(),
+    }))
+    .subscription(({ input, ctx }) => {
+      const { user } = ctx;
+      
+      return observable<{
+        type: 'thread_created' | 'thread_updated' | 'thread_deleted' | 'message_added';
+        threadId: string;
+        data: any;
+      }>((emit) => {
+        console.log(`Starting thread updates subscription for user ${user.userId}`);
+
+        // This would be integrated with the actual database change events
+        // For now, this is a placeholder
+        const mockUpdate = () => {
+          emit.next({
+            type: 'thread_updated',
+            threadId: input.threadIds?.[0] || 'demo-thread-id',
+            data: { title: 'Updated thread title' },
+          });
+        };
+
+        const interval = setInterval(mockUpdate, 5000);
+
+        return () => {
+          console.log(`Cleaning up thread updates subscription for user ${user.userId}`);
+          clearInterval(interval);
+        };
+      });
+    }),
+}); 

@@ -1,6 +1,45 @@
 import { z } from 'zod';
 import { router, publicProcedure, authenticatedProcedure } from '../trpc/init.js';
-import { syncUserToDatabase } from '../lib/auth.js';
+import { syncUserToDatabase, getUserFromAuth } from '../lib/auth.js';
+import * as crypto from 'crypto';
+
+// Encryption for API keys
+const getEncryptionKey = () => {
+  const envKey = process.env['ENCRYPTION_KEY'];
+  if (envKey) {
+    return Buffer.from(envKey, 'hex');
+  }
+  // Generate a random key if not provided (for dev only)
+  return Buffer.from(crypto.randomBytes(32).toString('hex'), 'hex');
+};
+
+const ENCRYPTION_KEY = getEncryptionKey();
+const IV_LENGTH = 16;
+
+function encrypt(text: string): string {
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  let encrypted = cipher.update(text);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decrypt(text: string): string {
+  const parts = text.split(':');
+  if (parts.length !== 2) {
+    throw new Error('Invalid encrypted text format');
+  }
+  const [ivHex, encryptedHex] = parts;
+  if (!ivHex || !encryptedHex) {
+    throw new Error('Invalid encrypted text format');
+  }
+  const iv = Buffer.from(ivHex, 'hex');
+  const encrypted = Buffer.from(encryptedHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  let decrypted = decipher.update(encrypted);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString();
+}
 
 export const authRouter = router({
   // Get current user profile
@@ -8,43 +47,30 @@ export const authRouter = router({
     .query(async ({ ctx }) => {
       const { user, prisma } = ctx;
       
-      // Get user data from database
-      const dbUser = await prisma.user.findUnique({
-        where: { id: user.userId },
-        include: {
-          apiKeys: {
-            select: {
-              id: true,
-              provider: true,
-              keyName: true,
-              createdAt: true,
-              // Don't return encrypted keys for security
-            },
-          },
-          _count: {
-            select: {
-              threads: true,
-              messages: true,
-            },
-          },
-        },
-      });
-
-      if (!dbUser) {
-        throw new Error('User not found in database');
+      if (!user) {
+        return { user: null };
       }
-
-      return {
-        user: {
-          id: dbUser.id,
-          email: dbUser.email,
-          username: dbUser.username,
-          createdAt: dbUser.createdAt,
-          updatedAt: dbUser.updatedAt,
-          apiKeys: dbUser.apiKeys,
-          stats: dbUser._count,
-        },
-      };
+      
+      // Sync user to database if not exists
+      try {
+        await prisma.user.upsert({
+          where: { id: user.userId },
+          update: {
+            email: user.email,
+            username: user.username,
+            updatedAt: new Date(),
+          },
+          create: {
+            id: user.userId,
+            email: user.email,
+            username: user.username,
+          },
+        });
+      } catch (error) {
+        console.error('Failed to sync user to database:', error);
+      }
+      
+      return { user };
     }),
 
   // Update user profile
@@ -72,52 +98,103 @@ export const authRouter = router({
       return { user: updatedUser };
     }),
 
-  // Store encrypted API key for LLM providers
+  // Get user's API keys
+  getApiKeys: authenticatedProcedure
+    .query(async ({ ctx }) => {
+      const { user, prisma } = ctx;
+      
+      const apiKeys = await prisma.userApiKey.findMany({
+        where: { userId: user.userId },
+        select: {
+          id: true,
+          provider: true,
+          keyName: true,
+          createdAt: true,
+        },
+      });
+      
+      return { apiKeys };
+    }),
+
+  // Add API key
   addApiKey: authenticatedProcedure
     .input(z.object({
-      provider: z.enum(['openai', 'anthropic', 'google', 'mistral', 'openrouter']),
-      keyName: z.string().min(1).max(100),
-      encryptedKey: z.string().min(1),
+      provider: z.string(),
+      keyName: z.string(),
+      apiKey: z.string(),
     }))
     .mutation(async ({ input, ctx }) => {
       const { user, prisma } = ctx;
-
+      
+      // Encrypt the API key
+      const encrypted = encrypt(input.apiKey);
+      
       const apiKey = await prisma.userApiKey.create({
         data: {
           userId: user.userId,
           provider: input.provider,
           keyName: input.keyName,
-          encrypted: input.encryptedKey,
+          encrypted,
+        },
+        select: {
+          id: true,
+          provider: true,
+          keyName: true,
+          createdAt: true,
         },
       });
-
-      return { 
-        apiKey: {
-          id: apiKey.id,
-          provider: apiKey.provider,
-          keyName: apiKey.keyName,
-          createdAt: apiKey.createdAt,
-        },
-      };
+      
+      return { apiKey };
     }),
 
-  // Remove API key
-  removeApiKey: authenticatedProcedure
+  // Delete API key
+  deleteApiKey: authenticatedProcedure
     .input(z.object({
-      apiKeyId: z.string().cuid(),
+      id: z.string(),
     }))
     .mutation(async ({ input, ctx }) => {
       const { user, prisma } = ctx;
-
-      // Ensure user can only delete their own API keys
-      await prisma.userApiKey.deleteMany({
+      
+      // Verify ownership
+      const existing = await prisma.userApiKey.findFirst({
         where: {
-          id: input.apiKeyId,
+          id: input.id,
           userId: user.userId,
         },
       });
-
+      
+      if (!existing) {
+        throw new Error('API key not found');
+      }
+      
+      await prisma.userApiKey.delete({
+        where: { id: input.id },
+      });
+      
       return { success: true };
+    }),
+
+  // Test API key decryption (internal use)
+  getDecryptedApiKey: authenticatedProcedure
+    .input(z.object({
+      provider: z.string(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const { user, prisma } = ctx;
+      
+      const apiKey = await prisma.userApiKey.findFirst({
+        where: {
+          userId: user.userId,
+          provider: input.provider,
+        },
+      });
+      
+      if (!apiKey) {
+        return { apiKey: null };
+      }
+      
+      const decrypted = decrypt(apiKey.encrypted);
+      return { apiKey: decrypted };
     }),
 
   // Clerk webhook handler for user sync

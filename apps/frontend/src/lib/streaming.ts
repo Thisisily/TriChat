@@ -13,7 +13,12 @@ export type StreamMessageType =
   | 'presence_update'
   | 'error'
   | 'ping'
-  | 'pong';
+  | 'pong'
+  | 'agent_start'
+  | 'agent_chunk'
+  | 'agent_complete'
+  | 'orchestrator_chunk'
+  | 'trinity_complete';
 
 export interface StreamMessage {
   type: StreamMessageType;
@@ -242,6 +247,8 @@ class StreamingService {
 
       const sseUrl = `${this.config.baseUrl}/stream/sse?userId=${encodeURIComponent(userId)}`;
       
+      // Note: EventSource doesn't support custom headers, so we'll pass auth in URL for now
+      // In production, consider using WebSocket or a different auth method
       this.sse = new EventSource(sseUrl);
 
       this.sse.onopen = (_event) => {

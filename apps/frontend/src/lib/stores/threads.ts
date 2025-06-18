@@ -55,6 +55,9 @@ export const messagesError = writable<string | null>(null);
 export const messagesCursor = writable<string | undefined>(undefined);
 export const hasMoreMessages = writable<boolean>(false);
 
+// Trinity data store - maps message ID to Trinity data
+export const trinityResponses = writable<Record<string, any>>({});
+
 // Derived stores
 export const sortedThreads: Readable<Thread[]> = derived(
   threads,
@@ -85,7 +88,15 @@ export const threadActions = {
         limit: 50,
       });
       
-      threads.set(result.threads);
+      // Map the backend response to include messageCount
+      const mappedThreads = result.threads.map(thread => ({
+        ...thread,
+        messageCount: (thread as any)._count?.messages || 0,
+        // Note: backend doesn't include lastMessage by default, we'll update this via streaming
+      }));
+      
+      threads.set(mappedThreads);
+      console.log('Loaded threads:', mappedThreads.length);
     } catch (error) {
       console.error('Failed to load threads:', error);
       threadsError.set(error instanceof Error ? error.message : 'Failed to load threads');
@@ -164,6 +175,14 @@ export const messageActions = {
         currentMessages.set(result.messages);
       }
       
+      // Update Trinity data if present
+      if (result.trinityData) {
+        trinityResponses.update(responses => ({
+          ...responses,
+          ...result.trinityData
+        }));
+      }
+      
       messagesCursor.set(result.nextCursor);
       hasMoreMessages.set(!!result.nextCursor);
     } catch (error) {
@@ -190,8 +209,28 @@ export const messageActions = {
     }
   },
 
+  // Create a new thread
+  async createThread() {
+    try {
+      const result = await trpc.chat.createThread.mutate({
+        title: 'New Chat',
+        isPublic: false,
+      });
+      
+      currentThread.set(result.thread);
+      
+      // Add the new thread to the list
+      threads.update(list => [result.thread, ...list]);
+      
+      return result.thread;
+    } catch (error) {
+      console.error('Failed to create thread:', error);
+      throw error;
+    }
+  },
+
   // Send a message
-  async sendMessage(content: string, model: string, provider: string): Promise<void> {
+  async sendMessage(content: string, model: string, provider: string, autoMemoryEnabled = false): Promise<void> {
     const $currentThread = currentThread;
     let threadId: string | null = null;
     $currentThread.subscribe(value => { threadId = value?.id || null; })();
@@ -209,6 +248,7 @@ export const messageActions = {
         content,
         model,
         provider: provider as 'openai' | 'anthropic' | 'google' | 'mistral' | 'openrouter',
+        autoMemoryEnabled,
       });
       
       // Add both user and assistant messages to the current messages
@@ -235,6 +275,95 @@ export const messageActions = {
     }
   },
 
+  // Send a Trinity mode message
+  async sendTrinityMessage(
+    content: string, 
+    config: {
+      executionMode: 'parallel' | 'sequential' | 'hybrid',
+      preset: string,
+      customWeights: {
+        analytical: number,
+        creative: number,
+        factual: number
+      },
+      agents: {
+        analytical: { model: string, provider: string },
+        creative: { model: string, provider: string },
+        factual: { model: string, provider: string }
+      },
+      orchestrator: {
+        model: string,
+        provider: string
+      },
+      advanced: any
+    },
+    autoMemoryEnabled = false
+  ): Promise<void> {
+    const $currentThread = currentThread;
+    let threadId: string | null = null;
+    $currentThread.subscribe(value => { threadId = value?.id || null; })();
+    
+    if (!threadId) {
+      throw new Error('No thread selected');
+    }
+
+    try {
+      sendingMessage.set(true);
+      messagesError.set(null);
+      
+      // Call Trinity API
+      const result = await trpc.trinity.sendMessage.mutate({
+        threadId,
+        content,
+        trinityConfig: {
+          executionMode: config.executionMode,
+          preset: config.preset,
+          customConfig: {
+            ...config,
+            agentModels: config.agents
+          }
+        }
+      });
+      
+      console.log('Trinity API Result:', result);
+      console.log('Assistant Message Type:', typeof result.assistantMessage);
+      console.log('Assistant Message:', result.assistantMessage);
+      console.log('Assistant Message Content:', result.assistantMessage?.content);
+      
+      // Add both user and assistant messages to the current messages
+      currentMessages.update(current => [
+        ...current,
+        result.userMessage,
+        result.assistantMessage,
+      ]);
+      
+      // Store Trinity data for display in console (could be used for UI later)
+      if (result.trinityData) {
+        console.log('Trinity Mode response:', result.trinityData);
+        // Store Trinity data mapped to assistant message ID
+        trinityResponses.update(responses => ({
+          ...responses,
+          [result.assistantMessage.id]: result.trinityData
+        }));
+      }
+      
+      // Update thread with new message
+      threads.update(items => 
+        items.map(thread => 
+          thread.id === threadId 
+            ? { ...thread, updatedAt: new Date() }
+            : thread
+        )
+      );
+    } catch (error: any) {
+      messagesError.set(error.message || 'Failed to send Trinity message');
+      console.error('Error sending Trinity message:', error);
+      throw error;
+    } finally {
+      sendingMessage.set(false);
+    }
+  },
+
   // Clear messages
   clear(): void {
     currentMessages.set([]);
@@ -248,9 +377,12 @@ export const messageActions = {
 
 // Auto-load threads when user becomes authenticated
 isAuthenticated.subscribe(async ($isAuthenticated) => {
+  console.log('Authentication state changed:', $isAuthenticated);
   if ($isAuthenticated) {
+    console.log('User authenticated, loading threads...');
     await threadActions.loadThreads();
   } else {
+    console.log('User not authenticated, clearing threads...');
     threadActions.clear();
   }
 }); 

@@ -1,10 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { router, createContext } from './trpc/init.js';
-import { healthRouter } from './routes/health.js';
-import { chatRouter } from './routes/chat.js';
-import { authRouter } from './routes/auth.js';
+import { createContext } from './trpc/init.js';
+import { appRouter } from './trpc/router.js';
 import { streamingRouter } from './routes/streaming.js';
 
 const app = new Hono();
@@ -20,13 +18,6 @@ app.use('*', cors({
 
 // Streaming routes (WebSocket & SSE)
 app.route('/stream', streamingRouter);
-
-// tRPC routes
-const appRouter = router({
-  health: healthRouter,
-  chat: chatRouter,
-  auth: authRouter,
-});
 
 // tRPC handler
 app.use('/trpc/*', async (c) => {

@@ -10,6 +10,7 @@
     type Thread 
   } from '../stores';
   import { isAuthenticated } from '../stores';
+  import ThreadSkeleton from './ThreadSkeleton.svelte';
 
   // Component state
   let searchQuery = '';
@@ -155,8 +156,7 @@
     {:else if $threadsLoading}
       <!-- Loading state -->
       <div class="loading-state">
-        <div class="loading-spinner"></div>
-        <p>Loading conversations...</p>
+        <ThreadSkeleton count={5} />
       </div>
       
     {:else if $threadsError}
@@ -221,7 +221,7 @@
                 
                 <div class="thread-preview">
                   <span class="last-message">{formatLastMessage(thread)}</span>
-                  {#if thread.messageCount}
+                  {#if thread.messageCount !== undefined && thread.messageCount !== null}
                     <span class="message-count">{thread.messageCount} message{thread.messageCount !== 1 ? 's' : ''}</span>
                   {/if}
                 </div>
@@ -264,16 +264,22 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: white;
-    border-right: 1px solid #e5e7eb;
+    background: linear-gradient(
+      135deg,
+      rgba(0, 0, 0, 0.15),
+      rgba(0, 0, 0, 0.08)
+    );
+    backdrop-filter: blur(20px) saturate(160%);
+    border-right: 1px solid rgba(255, 255, 255, 0.15);
     width: 100%;
     overflow: hidden;
   }
 
   .thread-list-header {
     padding: 16px 16px 12px 16px;
-    border-bottom: 1px solid #e5e7eb;
-    background: #f9fafb;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(16px);
   }
 
   .header-content {
@@ -289,20 +295,25 @@
     gap: 8px;
     font-size: 16px;
     font-weight: 600;
-    color: #111827;
+    color: rgba(255, 255, 255, 0.95);
     margin: 0;
   }
 
   .thread-count {
     font-size: 14px;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.7);
     font-weight: 400;
   }
 
   .create-button {
-    background: #667eea;
+    background: linear-gradient(
+      135deg,
+      rgba(102, 126, 234, 0.25),
+      rgba(118, 75, 162, 0.15)
+    );
+    backdrop-filter: blur(12px) saturate(150%);
     color: white;
-    border: none;
+    border: 1px solid rgba(102, 126, 234, 0.3);
     width: 32px;
     height: 32px;
     border-radius: 8px;
@@ -313,11 +324,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 
+      0 2px 8px rgba(0, 0, 0, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 
   .create-button:hover:not(:disabled) {
-    background: #5a67d8;
+    background: linear-gradient(
+      135deg,
+      rgba(102, 126, 234, 0.35),
+      rgba(118, 75, 162, 0.25)
+    );
     transform: scale(1.05);
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
   }
 
   .create-button:disabled {
@@ -332,17 +353,24 @@
   .search-input {
     width: 100%;
     padding: 8px 32px 8px 12px;
-    border: 1px solid #d1d5db;
+    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 8px;
     font-size: 14px;
-    background: white;
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(8px);
+    color: rgba(255, 255, 255, 0.95);
     transition: all 0.2s ease;
+  }
+
+  .search-input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .search-input:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: rgba(102, 126, 234, 0.5);
+    background: rgba(0, 0, 0, 0.15);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
   }
 
   .clear-search, .search-icon {
@@ -354,12 +382,12 @@
     border: none;
     cursor: pointer;
     font-size: 14px;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.6);
     padding: 4px;
   }
 
   .clear-search:hover {
-    color: #374151;
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .thread-list-content {
@@ -370,23 +398,31 @@
 
   .create-thread-form {
     padding: 12px 16px;
-    border-bottom: 1px solid #f3f4f6;
-    background: #f9fafb;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(8px);
   }
 
   .create-input {
     width: 100%;
     padding: 8px 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
     font-size: 14px;
     margin-bottom: 8px;
+    background: rgba(0, 0, 0, 0.1);
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .create-input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .create-input:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: rgba(102, 126, 234, 0.5);
+    background: rgba(0, 0, 0, 0.15);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
   }
 
   .create-actions {
@@ -404,14 +440,23 @@
   }
 
   .create-save {
-    background: #667eea;
+    background: linear-gradient(
+      135deg,
+      rgba(102, 126, 234, 0.25),
+      rgba(118, 75, 162, 0.15)
+    );
+    backdrop-filter: blur(12px) saturate(150%);
     color: white;
-    border-color: #667eea;
+    border-color: rgba(102, 126, 234, 0.3);
   }
 
   .create-save:hover:not(:disabled) {
-    background: #5a67d8;
-    border-color: #5a67d8;
+    background: linear-gradient(
+      135deg,
+      rgba(102, 126, 234, 0.35),
+      rgba(118, 75, 162, 0.25)
+    );
+    border-color: rgba(102, 126, 234, 0.4);
   }
 
   .create-save:disabled {
@@ -420,13 +465,15 @@
   }
 
   .create-cancel {
-    background: white;
-    color: #6b7280;
-    border-color: #d1d5db;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(8px);
+    color: rgba(255, 255, 255, 0.8);
+    border-color: rgba(255, 255, 255, 0.15);
   }
 
   .create-cancel:hover {
-    background: #f3f4f6;
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .threads {
@@ -435,22 +482,27 @@
 
   .thread-item {
     padding: 12px;
-    border-radius: 8px;
+    border-radius: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
     margin-bottom: 4px;
     border: 1px solid transparent;
+    backdrop-filter: blur(8px);
   }
 
   .thread-item:hover {
-    background: #f9fafb;
-    border-color: #e5e7eb;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   .thread-item.active {
-    background: #eff6ff;
-    border-color: #dbeafe;
-    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.1);
+    background: linear-gradient(
+      135deg,
+      rgba(102, 126, 234, 0.15),
+      rgba(118, 75, 162, 0.08)
+    );
+    border-color: rgba(102, 126, 234, 0.3);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
   }
 
   .thread-content {
@@ -467,7 +519,7 @@
   .thread-title {
     font-size: 14px;
     font-weight: 600;
-    color: #111827;
+    color: rgba(255, 255, 255, 0.95);
     margin: 0;
     flex: 1;
     white-space: nowrap;
@@ -478,7 +530,7 @@
 
   .thread-time {
     font-size: 12px;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.6);
     white-space: nowrap;
   }
 
@@ -491,7 +543,7 @@
 
   .last-message {
     font-size: 13px;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.7);
     flex: 1;
     white-space: nowrap;
     overflow: hidden;
@@ -501,7 +553,7 @@
 
   .message-count {
     font-size: 11px;
-    color: #9ca3af;
+    color: rgba(255, 255, 255, 0.5);
     white-space: nowrap;
   }
 
@@ -510,12 +562,13 @@
   }
 
   .public-badge {
-    background: #dbeafe;
-    color: #1e40af;
+    background: rgba(59, 130, 246, 0.2);
+    color: rgba(147, 197, 253, 0.9);
     font-size: 11px;
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: 500;
+    backdrop-filter: blur(4px);
   }
 
   .empty-state, .loading-state, .error-state {
@@ -525,13 +578,14 @@
     justify-content: center;
     padding: 32px 16px;
     text-align: center;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.7);
   }
 
   .empty-icon, .error-icon {
     font-size: 48px;
     margin-bottom: 16px;
-    opacity: 0.5;
+    opacity: 0.7;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
   }
 
   .empty-state p, .loading-state p, .error-state p {
@@ -541,31 +595,46 @@
 
   .empty-subtitle {
     font-size: 13px !important;
-    color: #9ca3af !important;
+    color: rgba(255, 255, 255, 0.5) !important;
   }
 
   .start-conversation, .retry-button, .clear-search-button {
-    background: #667eea;
+    background: linear-gradient(
+      135deg,
+      rgba(102, 126, 234, 0.25),
+      rgba(118, 75, 162, 0.15)
+    );
+    backdrop-filter: blur(12px) saturate(150%);
     color: white;
-    border: none;
+    border: 1px solid rgba(102, 126, 234, 0.3);
     padding: 8px 16px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 14px;
     cursor: pointer;
     margin-top: 12px;
     transition: all 0.2s ease;
+    box-shadow: 
+      0 2px 8px rgba(0, 0, 0, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 
   .start-conversation:hover, .retry-button:hover, .clear-search-button:hover {
-    background: #5a67d8;
+    background: linear-gradient(
+      135deg,
+      rgba(102, 126, 234, 0.35),
+      rgba(118, 75, 162, 0.25)
+    );
     transform: translateY(-1px);
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
   }
 
   .loading-spinner {
     width: 24px;
     height: 24px;
-    border: 2px solid #e5e7eb;
-    border-top: 2px solid #667eea;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-top: 2px solid rgba(102, 126, 234, 0.8);
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin-bottom: 16px;
@@ -576,74 +645,7 @@
     100% { transform: rotate(360deg); }
   }
 
-  /* Dark mode support */
-  @media (prefers-color-scheme: dark) {
-    .thread-list {
-      background: #1f2937;
-      border-color: #374151;
-    }
 
-    .thread-list-header {
-      background: #111827;
-      border-color: #374151;
-    }
-
-    .header-title {
-      color: #f9fafb;
-    }
-
-    .thread-count {
-      color: #9ca3af;
-    }
-
-    .search-input {
-      background: #374151;
-      border-color: #4b5563;
-      color: #f9fafb;
-    }
-
-    .create-input {
-      background: #374151;
-      border-color: #4b5563;
-      color: #f9fafb;
-    }
-
-    .create-thread-form {
-      background: #111827;
-      border-color: #374151;
-    }
-
-    .thread-item:hover {
-      background: #374151;
-      border-color: #4b5563;
-    }
-
-    .thread-item.active {
-      background: #1e3a8a;
-      border-color: #3b82f6;
-    }
-
-    .thread-title {
-      color: #f9fafb;
-    }
-
-    .thread-time, .last-message {
-      color: #9ca3af;
-    }
-
-    .message-count {
-      color: #6b7280;
-    }
-
-    .empty-state, .loading-state, .error-state {
-      color: #9ca3af;
-    }
-
-    .loading-spinner {
-      border-color: #4b5563;
-      border-top-color: #667eea;
-    }
-  }
 
   /* Mobile responsive */
   @media (max-width: 640px) {

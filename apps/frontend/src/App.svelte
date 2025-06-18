@@ -7,6 +7,8 @@
   import ChatUI from './lib/components/ChatUI.svelte';
   import LiquidGlassFilters from './lib/components/LiquidGlassFilters.svelte';
   import AnimatedBackground from './lib/components/AnimatedBackground.svelte';
+  import ToastContainer from './lib/components/ToastContainer.svelte';
+  import ErrorBoundary from './lib/components/ErrorBoundary.svelte';
   import './lib/styles/liquid-glass.css';
 
   // Initialize Clerk and theme on app startup
@@ -20,8 +22,13 @@
 <AnimatedBackground />
 
 <main class="app liquid-glass-bg">
-  <ChatUI />
+  <ErrorBoundary>
+    <ChatUI />
+  </ErrorBoundary>
 </main>
+
+<!-- Global Toast Container -->
+<ToastContainer position="top-right" />
 
 <style>
   :global(*, *::before, *::after) {

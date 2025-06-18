@@ -23,23 +23,56 @@ export async function getUserFromAuth(authHeader: string | undefined): Promise<{
   try {
     const token = authHeader.replace('Bearer ', '');
     
-    // For now, we'll implement a basic token verification
-    // In production, this should use proper Clerk session verification
-    // TODO: Implement proper Clerk session verification once API is clarified
-    
-    if (token === 'test_token') {
-      // Mock user for testing
+    // Simple JWT decode to get session ID (for basic verification)
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        console.log('Invalid JWT format');
+        return null;
+      }
+      
+      const payloadPart = parts[1];
+      if (!payloadPart) {
+        console.log('Missing JWT payload');
+        return null;
+      }
+      
+      const payload = JSON.parse(atob(payloadPart));
+      const sessionId = payload.sid;
+      const userId = payload.sub;
+      
+      if (!sessionId || !userId) {
+        console.log('No session ID or user ID found in token');
+        return null;
+      }
+      
+      // Verify session is active with Clerk
+      const session = await clerk.sessions.getSession(sessionId);
+      
+      if (!session || session.status !== 'active') {
+        console.log('Session not found or not active');
+        return null;
+      }
+
+      // Get user details from Clerk
+      const user = await clerk.users.getUser(userId);
+      
+      if (!user) {
+        console.log('User not found in Clerk:', userId);
+        return null;
+      }
+
       return {
-        userId: 'user_test123',
-        email: 'test@example.com',
-        username: 'testuser',
+        userId: user.id,
+        email: user.emailAddresses[0]?.emailAddress || '',
+        username: user.username,
       };
+      
+    } catch (decodeError) {
+      console.error('Failed to decode JWT token:', decodeError);
+      return null;
     }
-    
-    // Return null for any other token for now
-    console.log('Token verification not yet implemented:', token.substring(0, 10) + '...');
-    return null;
-    
+     
   } catch (error) {
     console.error('Auth verification failed:', error);
     return null;
@@ -90,4 +123,3 @@ export async function syncUserToDatabase(clerkUser: any): Promise<void> {
   }
 }
 
- 

@@ -1,5 +1,6 @@
 import { writable, derived, type Readable } from 'svelte/store';
 import { Clerk } from '@clerk/clerk-js';
+import { streamingActions } from '../streaming';
 
 // Types for user data
 export interface User {
@@ -55,7 +56,8 @@ export async function initializeClerk(): Promise<void> {
       let sessionToken: string | null = null;
       if (session) {
         try {
-          sessionToken = await session.getToken({ template: 'integration_default' });
+          // Use default template since 'integration_default' doesn't exist yet
+          sessionToken = await session.getToken();
         } catch (error) {
           console.error('Failed to get session token:', error);
         }
@@ -76,6 +78,19 @@ export async function initializeClerk(): Promise<void> {
       };
 
       authStore.set(authData);
+
+      // Connect/disconnect streaming based on auth state
+      if (user && sessionToken) {
+        console.log('User signed in, connecting to streaming service...');
+        try {
+          await streamingActions.connect();
+        } catch (error) {
+          console.error('Failed to connect streaming service:', error);
+        }
+      } else {
+        console.log('User signed out, disconnecting from streaming service...');
+        streamingActions.disconnect();
+      }
     });
 
     console.log('Clerk initialized successfully');
@@ -129,6 +144,9 @@ export async function signOut(): Promise<void> {
   }
 
   try {
+    // Disconnect streaming before signing out
+    streamingActions.disconnect();
+    
     await clerkInstance.signOut();
     authStore.set(initialState);
   } catch (error) {
@@ -144,7 +162,8 @@ export async function getSessionToken(): Promise<string | null> {
   }
 
   try {
-    return await clerkInstance.session.getToken({ template: 'integration_default' });
+    // Use default template since 'integration_default' doesn't exist yet
+    return await clerkInstance.session.getToken();
   } catch (error) {
     console.error('Failed to get session token:', error);
     return null;

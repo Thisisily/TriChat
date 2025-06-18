@@ -120,6 +120,11 @@
         <div class="menu-divider"></div>
         
         <!-- Menu Items -->
+        <button class="menu-item" on:click={() => { showDropdown = false; dispatch('openApiKeys'); }}>
+          <span class="menu-icon">🔑</span>
+          API Keys
+        </button>
+        
         <button class="menu-item" on:click={openSettings}>
           <span class="menu-icon">⚙️</span>
           Settings
@@ -270,23 +275,29 @@
   }
   
   .user-avatar-button {
-    background: none;
-    border: none;
+    background: transparent;
+    border: 2px solid rgba(255, 255, 255, 0.3);
     cursor: pointer;
-    padding: 0;
+    padding: 2px;
     border-radius: 50%;
     transition: all 0.2s ease;
     position: relative;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   
   .user-avatar-button:hover {
     transform: scale(1.05);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: rgba(255, 255, 255, 0.5);
   }
   
   .avatar-image, .avatar-fallback {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     display: flex;
     align-items: center;

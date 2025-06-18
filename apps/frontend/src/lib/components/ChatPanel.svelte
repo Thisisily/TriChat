@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
   import { marked } from 'marked';
   import { 
     currentMessages, 
@@ -8,6 +9,7 @@
     messagesError,
     hasMoreMessages,
     messageActions,
+    threads,
     type Message 
   } from '../stores/threads';
   import { 
@@ -17,18 +19,34 @@
     type StreamMessage 
   } from '../streaming';
   import { currentUser } from '../stores/auth';
+  import MessageSkeleton from './MessageSkeleton.svelte';
+  import ConnectionStatus from './ConnectionStatus.svelte';
+  import TrinityMessage from './TrinityMessage.svelte';
+
+  const dispatch = createEventDispatcher();
 
   // Component state
-  let messagesContainer: HTMLElement;
-  let shouldAutoScroll = true;
+  let messagesContainer: HTMLDivElement;
   let isNearBottom = true;
+  let shouldAutoScroll = true;
+  let unsubscribeStreaming: (() => void) | null = null;
+  let unsubscribeComplete: (() => void) | null = null;
 
-  // Configure marked for security and performance
-  marked.setOptions({
-    breaks: true,
-    gfm: true,
-    sanitize: false, // We'll handle sanitization separately if needed
-  });
+  // Track Trinity messages
+  const trinityMessages = new Set<string>();
+
+  // Format message content with markdown
+  function formatMessageContent(content: string | any): string {
+    try {
+      // Ensure content is a string
+      const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
+      return marked.parse(contentStr) as string;
+    } catch (error) {
+      console.error('Markdown parsing error:', error);
+      // Fallback to string representation
+      return typeof content === 'string' ? content : JSON.stringify(content);
+    }
+  }
 
   // Auto-scroll behavior
   function scrollToBottom() {
@@ -54,12 +72,19 @@
       currentMessages.update(messages => {
         const lastMessage = messages[messages.length - 1];
         if (lastMessage && lastMessage.role === 'assistant') {
+          const updatedMessage = {
+            ...lastMessage,
+            content: streamMsg.data.content as string || lastMessage.content,
+          };
+          
+          // If this is the complete message, also update the threads store
+          if (streamMsg.type === 'chat_complete') {
+            updateThreadMetadata(updatedMessage);
+          }
+          
           return [
             ...messages.slice(0, -1),
-            {
-              ...lastMessage,
-              content: streamMsg.data.content as string || lastMessage.content,
-            }
+            updatedMessage
           ];
         }
         return messages;
@@ -70,6 +95,78 @@
         setTimeout(scrollToBottom, 10);
       }
     }
+  }
+
+  // Update thread metadata in the threads store
+  function updateThreadMetadata(lastMessage: Message) {
+    const $currentThread = currentThread;
+    let threadId: string | null = null;
+    $currentThread.subscribe(value => { threadId = value?.id || null; })();
+    
+    if (!threadId) return;
+    
+    // Only update if it's a user or assistant message (not system)
+    if (lastMessage.role === 'system') return;
+    
+    // Get current message count
+    let messageCount = 0;
+    currentMessages.subscribe(messages => { messageCount = messages.length; })();
+    
+    threads.update(currentThreads => 
+      currentThreads.map(thread => {
+        if (thread.id === threadId) {
+          return {
+            ...thread,
+            updatedAt: new Date(),
+            lastMessage: {
+              content: lastMessage.content,
+              createdAt: lastMessage.createdAt,
+              role: lastMessage.role as 'user' | 'assistant',
+            },
+            messageCount
+          };
+        }
+        return thread;
+      })
+    );
+  }
+
+  // Update thread metadata when messages are loaded (for existing threads)
+  function updateThreadFromCurrentMessages() {
+    const $currentThread = currentThread;
+    const $currentMessages = currentMessages;
+    
+    let threadId: string | null = null;
+    let messages: Message[] = [];
+    
+    $currentThread.subscribe(value => { threadId = value?.id || null; })();
+    $currentMessages.subscribe(value => { messages = value; })();
+    
+    if (!threadId || messages.length === 0) return;
+    
+    // Find the last user or assistant message
+    const lastMessage = messages
+      .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+      .slice(-1)[0];
+      
+    if (!lastMessage) return;
+    
+    threads.update(currentThreads => 
+      currentThreads.map(thread => {
+        if (thread.id === threadId) {
+          return {
+            ...thread,
+            lastMessage: {
+              content: lastMessage.content,
+              createdAt: lastMessage.createdAt,
+              role: lastMessage.role as 'user' | 'assistant',
+            },
+            messageCount: messages.length
+          };
+        }
+        return thread;
+      })
+    );
   }
 
   // Load more messages when scrolled to top
@@ -96,16 +193,6 @@
     }
   }
 
-  // Format message content with markdown
-  function formatMessageContent(content: string): string {
-    try {
-      return marked(content);
-    } catch (error) {
-      console.error('Markdown parsing error:', error);
-      return content; // Fallback to plain text
-    }
-  }
-
   // Format timestamp
   function formatTimestamp(date: Date): string {
     const now = new Date();
@@ -129,11 +216,12 @@
   }
 
   // Subscribe to streaming messages
-  let unsubscribeStreaming: (() => void) | null = null;
-
   onMount(() => {
     // Subscribe to streaming messages for live updates
     unsubscribeStreaming = streamingActions.onChatResponse(handleStreamingMessage);
+    unsubscribeComplete = streamingActions.onChatComplete(handleStreamingMessage);
+    
+    console.log('ChatPanel: Subscribed to streaming messages');
     
     // Initial scroll to bottom
     setTimeout(scrollToBottom, 100);
@@ -142,6 +230,10 @@
   onDestroy(() => {
     if (unsubscribeStreaming) {
       unsubscribeStreaming();
+      console.log('ChatPanel: Unsubscribed from streaming messages');
+    }
+    if (unsubscribeComplete) {
+      unsubscribeComplete();
     }
   });
 
@@ -156,6 +248,11 @@
   $: if ($currentMessages.length > 0 && shouldAutoScroll) {
     setTimeout(scrollToBottom, 10);
   }
+
+  // Update thread when current messages change (e.g., when switching threads or loading messages)
+  $: if ($currentMessages.length > 0 && $currentThread) {
+    updateThreadFromCurrentMessages();
+  }
 </script>
 
 <div class="chat-panel">
@@ -164,20 +261,28 @@
     <div class="chat-header">
       <div class="thread-info">
         <h2 class="thread-title">{$currentThread.title}</h2>
+        <div class="thread-actions">
+          <button
+            class="summarize-btn"
+            on:click={() => dispatch('summarize', { threadId: $currentThread.id })}
+            title="Summarize this chat"
+          >
+            <span class="summarize-icon">📝</span>
+            <span class="summarize-text">Summarize</span>
+          </button>
+        </div>
+      </div>
         <div class="thread-meta">
           <span class="message-count">
             {$currentMessages.length} message{$currentMessages.length !== 1 ? 's' : ''}
           </span>
-          {#if $connectionStatus.state === 'connected'}
-            <span class="connection-status connected">
-              🟢 {$connectionStatus.type}
-            </span>
-          {:else}
-            <span class="connection-status disconnected">
-              🔴 {$connectionStatus.state}
-            </span>
-          {/if}
-        </div>
+          <ConnectionStatus 
+            status={$connectionStatus.state === 'connected' ? 'connected' : 
+                    $connectionStatus.state === 'connecting' ? 'connecting' : 
+                    $connectionStatus.state === 'error' ? 'error' : 'disconnected'}
+            compact={true}
+            showLabel={false}
+          />
       </div>
     </div>
   {/if}
@@ -213,6 +318,16 @@
     <!-- Messages -->
     {#if $currentMessages.length > 0}
       {#each $currentMessages as message (message.id)}
+        <!-- Check if this is a Trinity message based on model containing "trinity" -->
+        {#if message.role === 'assistant' && message.model === 'trinity-mode'}
+          <TrinityMessage
+            messageId={message.id}
+            threadId={message.threadId}
+            autoStart={true}
+            enableMarkdown={true}
+            className="trinity-response"
+          />
+        {:else}
         <div class="message {message.role}">
           <div class="message-avatar">
             {#if message.role === 'user'}
@@ -264,6 +379,7 @@
             {/if}
           </div>
         </div>
+        {/if}
       {/each}
     {:else if !$messagesLoading}
       <!-- Empty state -->
@@ -276,9 +392,11 @@
 
     <!-- Loading state for initial load -->
     {#if $messagesLoading && $currentMessages.length === 0}
-      <div class="loading-initial">
-        <div class="spinner"></div>
-        <span>Loading messages...</span>
+      <div class="loading-skeletons">
+        <MessageSkeleton variant="assistant" lines={2} />
+        <MessageSkeleton variant="user" lines={1} showAvatar={false} />
+        <MessageSkeleton variant="assistant" lines={3} />
+        <MessageSkeleton variant="user" lines={2} showAvatar={false} />
       </div>
     {/if}
   </div>
@@ -319,6 +437,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    margin-bottom: 8px;
   }
 
   .thread-title {
@@ -326,6 +445,46 @@
     font-weight: 600;
     color: #111827;
     margin: 0;
+  }
+
+  .thread-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .summarize-btn {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(102, 126, 234, 0.2);
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+  }
+
+  .summarize-btn:hover {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%);
+    border-color: rgba(102, 126, 234, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  }
+
+  .summarize-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+  }
+
+  .summarize-icon {
+    margin-right: 4px;
+  }
+
+  .summarize-text {
+    font-weight: 500;
   }
 
   .thread-meta {
@@ -520,6 +679,12 @@
     margin-top: 4px;
   }
 
+  /* Trinity message styling */
+  :global(.trinity-response) {
+    margin-bottom: 20px;
+    background: transparent !important;
+  }
+
   .empty-state {
     display: flex;
     flex-direction: column;
@@ -610,6 +775,17 @@
 
     .thread-title {
       color: #f9fafb;
+    }
+    
+    .summarize-btn {
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%);
+      color: rgba(255, 255, 255, 0.95);
+      border-color: rgba(102, 126, 234, 0.3);
+    }
+    
+    .summarize-btn:hover {
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.35) 0%, rgba(118, 75, 162, 0.35) 100%);
+      border-color: rgba(102, 126, 234, 0.4);
     }
 
     .message-author {

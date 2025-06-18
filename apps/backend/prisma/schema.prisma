@@ -10,17 +10,18 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 // User model for authentication and user management
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  username  String?  @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String    @id @default(cuid())
+  email        String    @unique
+  username     String?   @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastSyncedAt DateTime? // Track last synchronization timestamp for cross-device consistency
 
   // User's encrypted API keys for LLM providers
   apiKeys UserApiKey[]
@@ -57,6 +58,7 @@ model Thread {
   title          String
   isPublic       Boolean  @default(false)
   parentThreadId String?  // For thread branching
+  version        Int      @default(1) // Optimistic locking for conflict resolution
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -90,6 +92,7 @@ model Message {
   role      MessageRole
   model     String?     // LLM model used for assistant messages
   provider  String?     // LLM provider used
+  version   Int         @default(1) // Optimistic locking for conflict resolution
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -106,15 +109,15 @@ model Message {
   @@map("messages")
 }
 
-// Memory card model for vector embeddings (will be used with PgVector)
+// Memory card model for vector embeddings (PgVector)
 model MemoryCard {
   id          String   @id @default(cuid())
   userId      String
   title       String
   content     String
   summary     String?
-  embedding   String?  // Will store JSON array of floats for embeddings
-  metadata    String?  // JSON string for additional metadata
+  embedding   Unsupported("vector(1536)")?  // PgVector embedding (1536 dimensions for OpenAI)
+  metadata    Json?    // JSON for additional metadata
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

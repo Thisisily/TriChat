@@ -268,10 +268,9 @@ export const createWebSocketHandler = () => {
 export const createSSEHandler = () => {
   return async (c: Context) => {
     const userId = c.req.query('userId');
-    const token = c.req.header('authorization')?.replace('Bearer ', '');
     
-    if (!userId || !token) {
-      return c.text('Unauthorized: userId and token required', 401);
+    if (!userId) {
+      return c.text('Bad Request: userId required', 400);
     }
 
     // Set SSE headers
