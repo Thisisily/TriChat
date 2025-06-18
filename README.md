@@ -1,6 +1,7 @@
 # TriChat - Multi-LLM Chat Application
 
 An open-source, high-performance multi-LLM chat application built for **raw speed and minimal latency**. Features a unique Trinity mode that combines multiple AI perspectives for enhanced responses.
+![image](https://github.com/user-attachments/assets/67bb0b4b-6755-49a9-b1d7-b754e411605a)
 
 ## 🚀 Features
 
